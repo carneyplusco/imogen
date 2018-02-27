@@ -61,7 +61,7 @@ defmodule Imogen do
     |> Flow.reject(fn(obj) -> is_nil(obj["images"]) end)
     |> Flow.flat_map(fn(obj) -> obj["images"] end)
     |> Flow.partition()
-    |> Flow.reject(fn(obj) -> obj["permitted"] end)
+    |> Flow.filter(fn(obj) -> obj["permitted"] end)
     |> Flow.map(fn(obj) -> obj["irn"] end)
     |> Flow.partition()
     |> Flow.map(&compute_path/1)
