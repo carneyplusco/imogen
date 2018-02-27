@@ -33,24 +33,26 @@ defmodule Imogen do
   def process_images(img_dir) do
     File.ls!(img_dir)
     |> Enum.reject(fn(dir) -> dir =~ ~r/\./ end)
-    |> Enum.take(5)
+    # |> Enum.take(5)
     |> Flow.from_enumerable(max_demand: 1, stages: 32)
     |> Flow.each(fn(dir) -> resize_images("#{img_dir}/#{dir}", File.ls!("#{img_dir}/#{dir}")) end)
     |> Enum.to_list
   end  
 
   def resize_images(dir, imgs) do
-    img = imgs
-    |> Enum.filter(fn(img) -> img =~ ~r/\.jpg/ end)
-    |> Enum.sort(fn(a, b) -> File.stat!("#{dir}/#{a}").size >= File.stat!("#{dir}/#{b}").size end)
-    |> List.first
+    if !File.exists?("#{dir}/sizes") do
+      [img, _rest] = imgs
+      |> Enum.filter(fn(img) -> img =~ ~r/\.jpg/ end) # jpgs only
+      |> Enum.reject(fn(img) -> img =~ ~r/\dx\d/ end) # no previously resized images
+      |> Enum.reject(fn(img) -> img =~ ~r/thumb/ end) # no thumbnails
 
-    sizes = [210, 420, 840, 1680]
-    Enum.each(sizes, fn(size) ->
-      File.mkdir("#{dir}/sizes")
-      open("#{dir}/#{img}") |> resize_to_limit("#{size}x#{size}") |> save(path: "#{dir}/sizes/#{Path.basename(img, ".jpg")}-#{size}.jpg")
-    end)
-    # Progress.incr(:resize_image)
+      sizes = [210, 420, 840, 1680]
+      Enum.each(sizes, fn(size) ->
+        File.mkdir("#{dir}/sizes")
+        open("#{dir}/#{img}") |> resize_to_limit("#{size}x#{size}") |> save(path: "#{dir}/sizes/#{Path.basename(img, ".jpg")}-#{size}.jpg")
+      end)
+      # Progress.incr(:resize_image)
+    end
   end
 
   def fetch_files(conn, obj_list) do
