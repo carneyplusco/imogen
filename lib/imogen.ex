@@ -34,22 +34,25 @@ defmodule Imogen do
     File.ls!(img_dir)
     |> Enum.reject(fn(dir) -> dir =~ ~r/\./ end)
     # |> Enum.take(5)
-    |> Flow.from_enumerable(max_demand: 1, stages: 32)
+    |> Flow.from_enumerable(max_demand: 2, stages: 16)
     |> Flow.each(fn(dir) -> resize_images("#{img_dir}/#{dir}", File.ls!("#{img_dir}/#{dir}")) end)
     |> Enum.to_list
-  end  
+  end
 
+  def resize_images(dir, []), do: IO.puts "No images in #{dir}"
   def resize_images(dir, imgs) do
     if !File.exists?("#{dir}/sizes") do
-      [img, _rest] = imgs
-      |> Enum.filter(fn(img) -> img =~ ~r/\.jpg/ end) # jpgs only
-      |> Enum.reject(fn(img) -> img =~ ~r/\dx\d/ end) # no previously resized images
-      |> Enum.reject(fn(img) -> img =~ ~r/thumb/ end) # no thumbnails
-
-      sizes = [210, 420, 840, 1680]
-      Enum.each(sizes, fn(size) ->
-        File.mkdir("#{dir}/sizes")
-        open("#{dir}/#{img}") |> resize_to_limit("#{size}x#{size}") |> save(path: "#{dir}/sizes/#{Path.basename(img, ".jpg")}-#{size}.jpg")
+      IO.puts dir
+      imgs
+      |> Enum.filter(fn(img) -> img =~ ~r/\.jpg$/i end) # jpgs only
+      |> Enum.reject(fn(img) -> img =~ ~r/\dx\d/i end) # no previously resized images
+      |> Enum.reject(fn(img) -> img =~ ~r/thumb/i end) # no thumbnails
+      |> Enum.map(fn(img) ->
+        sizes = [210, 420, 840, 1680]
+        Enum.each(sizes, fn(size) ->
+          File.mkdir("#{dir}/sizes")
+          open("#{dir}/#{img}") |> resize_to_limit("#{size}x#{size}") |> save(path: "#{dir}/sizes/#{Path.basename(img, ".jpg")}-#{size}.jpg")
+        end)
       end)
       # Progress.incr(:resize_image)
     end
@@ -81,6 +84,7 @@ defmodule Imogen do
     emu_path = "../emu/cma/multimedia/#{Enum.join(path, "/")}"
     backup_path = "/Volumes/Files/collections/images/#{Enum.join(path,"")}"
     if !File.exists?(backup_path) do
+      # IO.puts backup_path
       File.mkdir_p!(backup_path)
       SSHKit.SCP.download(conn, "#{emu_path}/*", backup_path, recursive: true)
     end
@@ -112,7 +116,7 @@ defmodule Imogen do
     |> Enum.reject(fn(obj) -> is_nil(obj["images"]) end)
     # |> Flow.partition()
     |> Enum.reduce([], fn(obj, acc) ->
-      new_images = Enum.reduce(obj["images"], [], fn(img, acc) -> 
+      new_images = Enum.reduce(obj["images"], [], fn(img, acc) ->
         irn = Integer.to_string(img["irn"])
         image_with_files = Map.put(img, "files", imgs[irn])
         acc ++ [image_with_files]
