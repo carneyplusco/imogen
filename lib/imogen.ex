@@ -7,27 +7,30 @@ defmodule Imogen do
 
   def download_from_json(file, destination \\ "") do
     {ssh_status, conn} = open_connection()
+    download_with_connection(ssh_status, conn, file, destination)
+  end
 
+  defp download_with_connection(:error, _conn, _file, _destination), do: IO.puts("error connecting via SSH")
+  defp download_with_connection(:ok, conn, file, destination) do
     {decode_status, result} = file |> File.read! |> Jason.decode
-
     case decode_status do
       :ok ->
-        truncate_folders(result["thing"], destination)
-        fetch_files(conn, result["thing"], destination)
-        process_images(destination)
+        [key | _blank] = Map.keys(result)
+        truncate_folders(result[key], "#{destination}/#{key}")
+        fetch_files(conn, result[key], "#{destination}/#{key}")
+        process_images("#{destination}/#{key}")
       _ -> IO.inspect(result)
     end
 
-    close_connection(ssh_status, conn)
+    close_connection(conn)
   end
 
   defp open_connection do
     config = Application.get_all_env(:imogen)
-    SSHKit.SSH.connect(config[:emu_host], user: config[:emu_username], password: config[:emu_password], port: 2246)
+    SSHKit.SSH.connect(config[:emu_host], user: config[:emu_username], password: config[:emu_password], timeout: 5000)
   end
 
-  defp close_connection(:error, _conn), do: IO.puts("error connecting via SSH")
-  defp close_connection(_ssh_status, conn) do
+  defp close_connection(conn) do
     SSHKit.SSH.close(conn)
   end
 
@@ -83,7 +86,10 @@ defmodule Imogen do
     dirs = File.ls!(directory)
     dirs -- allowed_folders
     |> Enum.map(fn(dir) -> "#{directory}/#{dir}" end)
-    |> Enum.each(&File.rm_rf!/1)
+    |> Enum.each(fn(dir) ->
+      IO.puts "Removing: #{dir}"
+      File.rm_rf!(dir)
+    end)
   end
 
   def process_images(img_dir) do
@@ -97,7 +103,7 @@ defmodule Imogen do
   defp resize_images(dir, []), do: IO.puts "No images in #{dir}"
   defp resize_images(dir, imgs) do
     if !File.exists?("#{dir}/sizes") do
-      IO.puts dir
+      IO.puts "Creating: #{dir}"
       imgs
       |> Enum.filter(fn(img) -> img =~ ~r/\.jpg$/i end) # jpgs only
       |> Enum.reject(fn(img) -> img =~ ~r/\dx\d/i end) # no previously resized images
@@ -111,9 +117,4 @@ defmodule Imogen do
       end)
     end
   end
-
-  def hello do
-    IO.puts("hi")
-  end
-
 end
