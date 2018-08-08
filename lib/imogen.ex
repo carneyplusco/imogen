@@ -5,44 +5,105 @@ defmodule Imogen do
   Documentation for Imogen.
   """
 
-  # NimbleCSV.define(MyParser, separator: ",", escape: "\"")
+  def download_from_json(file, destination \\ "") do
+    {ssh_status, conn} = open_connection()
+    download_with_connection(ssh_status, conn, file, destination)
+  end
 
-  # def parse_csv do
-  #   Progress.start_link([:download_image, :resize_image])
+  defp download_with_connection(:error, _conn, _file, _destination), do: IO.puts("error connecting via SSH")
+  defp download_with_connection(:ok, conn, file, destination) do
+    {decode_status, result} = file |> File.read! |> Jason.decode
+    case decode_status do
+      :ok ->
+        [key | _blank] = Map.keys(result)
+        truncate_folders(result[key], "#{destination}/#{key}")
+        fetch_files(conn, result[key], "#{destination}/#{key}")
+        process_images("#{destination}/#{key}")
+      _ -> IO.inspect(result)
+    end
 
-  #   "./backup/files_output.csv"
-  #   |> File.stream!
-  #   |> MyParser.parse_stream
-  #   |> Flow.from_enumerable(max_demand: 1, stages: 32)
-  #   |> Flow.map(fn [_,_,_,_,_,_,_,_,_,_,_,_,url,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_] -> url end)
-  #   |> Flow.partition()
-  #   |> Flow.map(&download_image/1)
-  #   |> Flow.map(&resize_image/1)
-  #   |> Enum.to_list()
-  # end
+    close_connection(conn)
+  end
 
-  # def download_image(img) do
-  #   uri = URI.parse(img)
-  #   filename = Path.basename(uri.path)
-  #   %HTTPoison.Response{body: body} = HTTPoison.get!(img)
-  #   File.write!("./images/art/#{filename}", body)
-  #   # Progress.incr(:download_image)
-  #   filename
-  # end
+  defp open_connection do
+    config = Application.get_all_env(:imogen)
+    SSHKit.SSH.connect(config[:emu_host], user: config[:emu_username], password: config[:emu_password], timeout: 5000)
+  end
+
+  defp close_connection(conn) do
+    SSHKit.SSH.close(conn)
+  end
+
+  defp fetch_files(conn, obj_list, destination) do
+    obj_list
+    |> Flow.from_enumerable(max_demand: 1, stages: 32)
+    |> Flow.reject(fn(obj) -> is_nil(obj["images"]) end)
+    |> Flow.flat_map(fn(obj) -> obj["images"] end)
+    |> Flow.partition()
+    |> Flow.filter(fn(obj) -> obj["permitted"] end)
+    |> Flow.map(fn(obj) -> obj["irn"] end)
+    |> Flow.partition()
+    |> Flow.map(&compute_path/1)
+    |> Flow.map(fn(path) -> download_files(conn, path, destination) end)
+    |> Enum.to_list
+  end
+
+  defp compute_path(id) do
+    id
+    |> Integer.to_string
+    |> String.pad_leading(4, "0")
+    |> String.split_at(-3)
+    |> Tuple.to_list
+  end
+
+  defp download_files(conn, path, destination) do
+    emu_path = "../emu/cma/multimedia/#{Enum.join(path, "/")}"
+    backup_path = "#{destination}/#{Enum.join(path,"")}"
+    if !File.exists?(backup_path) do
+      File.mkdir_p!(backup_path)
+      SSHKit.SCP.download(conn, "#{emu_path}/*", backup_path, recursive: true)
+    end
+  end
+
+  def clean(file, directory) do
+    {decode_status, result} = file |> File.read! |> Jason.decode
+
+    case decode_status do
+      :ok ->
+        truncate_folders(result["thing"], directory)
+      _ -> IO.inspect(result)
+    end 
+  end
+
+  defp truncate_folders(obj_list, directory) do
+    allowed_folders = obj_list
+    |> Enum.reject(fn(obj) -> is_nil(obj["images"]) end)
+    |> Enum.flat_map(fn(obj) -> obj["images"] end)
+    |> Enum.filter(fn(obj) -> obj["permitted"] end)
+    |> Enum.map(fn(obj) -> obj["irn"] end)
+    |> Enum.map(&Integer.to_string/1)
+
+    dirs = File.ls!(directory)
+    dirs -- allowed_folders
+    |> Enum.map(fn(dir) -> "#{directory}/#{dir}" end)
+    |> Enum.each(fn(dir) ->
+      IO.puts "Removing: #{dir}"
+      File.rm_rf!(dir)
+    end)
+  end
 
   def process_images(img_dir) do
     File.ls!(img_dir)
     |> Enum.reject(fn(dir) -> dir =~ ~r/\./ end)
-    # |> Enum.take(5)
     |> Flow.from_enumerable(max_demand: 2, stages: 16)
     |> Flow.each(fn(dir) -> resize_images("#{img_dir}/#{dir}", File.ls!("#{img_dir}/#{dir}")) end)
     |> Enum.to_list
   end
 
-  def resize_images(dir, []), do: IO.puts "No images in #{dir}"
-  def resize_images(dir, imgs) do
+  defp resize_images(dir, []), do: IO.puts "No images in #{dir}"
+  defp resize_images(dir, imgs) do
     if !File.exists?("#{dir}/sizes") do
-      IO.puts dir
+      IO.puts "Creating: #{dir}"
       imgs
       |> Enum.filter(fn(img) -> img =~ ~r/\.jpg$/i end) # jpgs only
       |> Enum.reject(fn(img) -> img =~ ~r/\dx\d/i end) # no previously resized images
@@ -54,87 +115,6 @@ defmodule Imogen do
           open("#{dir}/#{img}") |> resize_to_limit("#{size}x#{size}") |> save(path: "#{dir}/sizes/#{Path.basename(img, ".jpg")}-#{size}.jpg")
         end)
       end)
-      # Progress.incr(:resize_image)
     end
   end
-
-  def fetch_files(conn, obj_list) do
-    obj_list
-    |> Flow.from_enumerable(max_demand: 1, stages: 32)
-    |> Flow.reject(fn(obj) -> is_nil(obj["images"]) end)
-    |> Flow.flat_map(fn(obj) -> obj["images"] end)
-    |> Flow.partition()
-    |> Flow.filter(fn(obj) -> obj["permitted"] end)
-    |> Flow.map(fn(obj) -> obj["irn"] end)
-    |> Flow.partition()
-    |> Flow.map(&compute_path/1)
-    |> Flow.map(fn(path) -> download_files(conn, path) end)
-    |> Enum.to_list
-  end
-
-  def compute_path(id) do
-    id
-    |> Integer.to_string
-    |> String.pad_leading(4, "0")
-    |> String.split_at(-3)
-    |> Tuple.to_list
-  end
-
-  def download_files(conn, path) do
-    emu_path = "../emu/cma/multimedia/#{Enum.join(path, "/")}"
-    backup_path = "/Volumes/Files/collections/images/#{Enum.join(path,"")}"
-    if !File.exists?(backup_path) do
-      # IO.puts backup_path
-      File.mkdir_p!(backup_path)
-      SSHKit.SCP.download(conn, "#{emu_path}/*", backup_path, recursive: true)
-    end
-  end
-
-  def download_from_json(file) do
-    config = Application.get_all_env(:imogen)
-    {_ssh_status, conn} = SSHKit.SSH.connect(config[:emu_host], user: config[:emu_username], password: config[:emu_password])
-
-    {decode_status, result} = file |> File.read! |> Jason.decode
-
-    case decode_status do
-      :ok ->
-        fetch_files(conn, result["thing"])
-        # add_image_refs(result["thing"])
-      _ -> IO.inspect(result)
-    end
-
-    SSHKit.SSH.close(conn)
-  end
-
-  def add_image_refs(obj_list, img_dir) do
-    imgs = File.ls!(img_dir)
-    |> Enum.reject(fn(dir) -> dir =~ ~r/\./ end)
-    |> Enum.reduce(%{}, fn(dir, acc) -> Map.put(acc, dir, File.ls!("#{img_dir}/#{dir}")) end)
-
-    obj_list
-    # |> Flow.from_enumerable(max_demand: 1, stages: 32)
-    |> Enum.reject(fn(obj) -> is_nil(obj["images"]) end)
-    # |> Flow.partition()
-    |> Enum.reduce([], fn(obj, acc) ->
-      new_images = Enum.reduce(obj["images"], [], fn(img, acc) ->
-        irn = Integer.to_string(img["irn"])
-        image_with_files = Map.put(img, "files", imgs[irn])
-        acc ++ [image_with_files]
-      end)
-
-      new_obj = Map.put(obj, "images", new_images)
-      acc ++ [new_obj]
-    end)
-    # |> Enum.to_list
-  end
-
-  # def augment_json(file) do
-  #   {decode_status, result} = file |> File.read! |> Jason.decode
-
-  #   case decode_status do
-  #     :ok ->
-  #       add_image_refs(result["thing"])
-  #     _ -> IO.inspect(result)
-  #   end
-  # end
 end
