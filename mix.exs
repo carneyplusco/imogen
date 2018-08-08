@@ -5,7 +5,7 @@ defmodule Imogen.MixProject do
     [
       app: :imogen,
       version: "0.1.0",
-      elixir: "~> 1.7-dev",
+      elixir: "~> 1.6.0",
       start_permanent: Mix.env() == :prod,
       deps: deps()
     ]
@@ -21,6 +21,8 @@ defmodule Imogen.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
+      {:sweet_xml, "~> 0.6.5"},
+      {:nimble_csv, "~> 0.3"},
       {:jason, "~> 1.0.0"},
       {:flow, "~> 0.11"},
       {:mogrify, "~> 0.5.6"},
