@@ -1,21 +1,20 @@
-# Imogen
+# collection-image-processor
 
-**TODO: Add description**
+## Requirements
 
-## Installation
+1. Elixir 1.6+
 
-If [available in Hex](https://hex.pm/docs/publish), the package can be installed
-by adding `imogen` to your list of dependencies in `mix.exs`:
+## Setup
 
-```elixir
-def deps do
-  [
-    {:imogen, "~> 0.1.0"}
-  ]
-end
-```
+1. Run `mix deps.get` to install Elixir dependencies
+1. Add SSH credentials for the EMu server to `config/dev.exs`
 
-Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
-and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
-be found at [https://hexdocs.pm/imogen](https://hexdocs.pm/imogen).
+## Processing images
 
+Run `mix Images.Update "path/to/json_file.json" "path/to/output/directory"`
+
+> **Note**: directories that are not found in the JSON input file <u>will be deleted</u> from the output directory
+
+## Syncing images
+
+Run `mix Images.Sync "path/to/images/directory" "S3 bucket name"`
