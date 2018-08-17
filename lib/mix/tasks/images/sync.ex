@@ -6,7 +6,7 @@ defmodule Mix.Tasks.Images.Sync do
     sync(destination, bucket, profile, true)
   end
 
-  def run([destination, bucket, profile \\ "collection"]) do
+  def run([destination, bucket, profile]) do
     IO.puts "Syncing with S3..."
     sync(destination, bucket, profile, false)
   end
