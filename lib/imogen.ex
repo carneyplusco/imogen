@@ -26,6 +26,7 @@ defmodule Imogen do
   end
 
   defp open_connection do
+    Application.ensure_all_started(:sshkit)
     config = Application.get_all_env(:imogen)
     SSHKit.SSH.connect(config[:emu_host], user: config[:emu_username], password: config[:emu_password], timeout: 5000)
   end

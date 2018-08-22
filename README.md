@@ -17,4 +17,10 @@ Run `mix Images.Update "path/to/json_file.json" "path/to/output/directory"`
 
 ## Syncing images
 
-Run `mix Images.Sync "path/to/images/directory" "S3 bucket name"`
+Run `mix Images.Sync "path/to/images/directory" "S3 bucket name" "profile"`
+
+`profile` coresponds to an existing AWS access configuration, most likely stored in `~/.aws/credentials` ([More info here](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-getting-started.html))
+
+Optionally add `"dryrun"` as the last argument to see an output of the proposed changes to S3 before committing them.
+
+> **Note**: existing entries in S3 that are not found in the input directory <u>will be deleted</u> from the S3 bucket
